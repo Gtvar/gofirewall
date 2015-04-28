@@ -9,7 +9,7 @@ import (
  * Interface for firewall
  */
 type Firewall interface {
-	Check(Request, *Response)
+	Check(Request) Response
 	Support(Request) bool
 }
 
@@ -30,23 +30,33 @@ type Response struct {
 }
 
 /*
- * Firewall main
+ * Constructor
+ */
+func (r *Response) NewResponse(code int, reason string) *Response {
+	r.Code = code
+	r.Reason = reason
+
+	return r
+}
+
+/*
+ * Firewall main 
  * Get json data and check it for firewalls
  */
 func main () {
 	var jsonBlob = in()
 
-	var response Response
 	defer func() {
 		if err := recover(); err != nil {
 			var ex = fmt.Errorf("%v", err)
-			response.Reason = ex.Error()
+			var response Response
+			response = *response.NewResponse(1, ex.Error())
 
 			out(response)
 		}
 	}()
 
-	checker(jsonBlob, &response)
+	response := checker(jsonBlob)
 
 	out(response)
 }
@@ -72,7 +82,7 @@ func out(response Response) {
 /*
  * Manage firewalls
  */
-func checker(jsonBlob []byte, response *Response) {
+func checker(jsonBlob []byte) Response {
 	var request Request
 	err := json.Unmarshal(jsonBlob, &request)
 	if (err != nil) {
@@ -80,15 +90,16 @@ func checker(jsonBlob []byte, response *Response) {
 	}
 
 	var firewalls []Firewall
+	var response Response
 	firewalls = get_firewalls()
 
 	for _, firewall := range firewalls {
 		if firewall.Support(request) {
-			firewall.Check(request, response)
-
-			return
+			return firewall.Check(request)
 		}
 	}
+	
+	return response
 }
 
 /*
@@ -113,7 +124,7 @@ type UserProject struct {
 	Project string `json:"project"`
 }
 
-func (up UserProject) Check(request Request, response *Response) {
+func (up UserProject) Check(request Request) Response {
 	var self UserProject
 
 	rawBody,_ := request.Body.MarshalJSON()
@@ -123,8 +134,10 @@ func (up UserProject) Check(request Request, response *Response) {
 		panic(err)
 	}
 
-	response.Code = self.UserId
-	response.Reason = self.Project
+	var response Response
+	response = *response.NewResponse(1, "test")
+
+	return response
 }
 
 func (up UserProject) Support(request Request) bool {
@@ -138,7 +151,7 @@ type Email struct {
 	Email string `json:"email"`
 }
 
-func (up Email) Check(request Request, response *Response) {
+func (up Email) Check(request Request) Response {
 	var self Email
 
 	rawBody,_ := request.Body.MarshalJSON()
@@ -148,8 +161,10 @@ func (up Email) Check(request Request, response *Response) {
 		panic(err)
 	}
 
-	response.Code = 2
-	response.Reason = "strange"
+	var response Response
+	response = *response.NewResponse(2, "strange")
+
+	return response
 }
 
 func (up Email) Support(request Request) bool {
