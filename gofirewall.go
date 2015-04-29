@@ -1,8 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"encoding/json"
+	"fmt"
 )
 
 /*
@@ -17,7 +17,7 @@ type Firewall interface {
  * Request struct
  */
 type Request struct {
-	Cmd string `json:"cmd"`
+	Cmd  string          `json:"cmd"`
 	Body json.RawMessage `json:"body"`
 }
 
@@ -25,7 +25,7 @@ type Request struct {
  * Response
  */
 type Response struct {
-	Code int `json:"code"`
+	Code   int    `json:"code"`
 	Reason string `json:"reason"`
 }
 
@@ -39,18 +39,29 @@ func (r *Response) NewResponse(code int, reason string) *Response {
 	return r
 }
 
+func MakeResponse(code int, reason string) *Response {
+	r := new(Response)
+	r.Code = code
+	r.Reason = reason
+
+	return r
+}
+
+func CreateResponse(code int, reason string) *Response {
+	return &Response{code, reason}
+}
+
 /*
- * Firewall main 
+ * Firewall main
  * Get json data and check it for firewalls
  */
-func main () {
+func main() {
 	var jsonBlob = in()
 
 	defer func() {
 		if err := recover(); err != nil {
 			var ex = fmt.Errorf("%v", err)
-			var response Response
-			response = *response.NewResponse(1, ex.Error())
+			response := *MakeResponse(1, ex.Error())
 
 			out(response)
 		}
@@ -65,8 +76,8 @@ func main () {
  * Read data from source
  */
 func in() []byte {
-	var jsonBlob = []byte(`{"cmd":"UserProject","body":{"user_id":7,"project":"p6"}}`)
-//	var jsonBlob = []byte(`{"cmd":"Email","body":{"email":"test@test.com"}}`)
+	// var jsonBlob = []byte(`{"cmd":"UserProject","body":{"user_id":7,"project":"p6"}}`)
+	var jsonBlob = []byte(`{"cmd":"Email","body":{"email":"test@test.com"}}`)
 
 	return jsonBlob
 }
@@ -85,7 +96,7 @@ func out(response Response) {
 func checker(jsonBlob []byte) Response {
 	var request Request
 	err := json.Unmarshal(jsonBlob, &request)
-	if (err != nil) {
+	if err != nil {
 		panic(err)
 	}
 
@@ -98,7 +109,7 @@ func checker(jsonBlob []byte) Response {
 			return firewall.Check(request)
 		}
 	}
-	
+
 	return response
 }
 
@@ -120,14 +131,14 @@ func get_firewalls() []Firewall {
  * UserProject firewall
  */
 type UserProject struct {
-	UserId int `json:"user_id"`
+	UserId  int    `json:"user_id"`
 	Project string `json:"project"`
 }
 
 func (up UserProject) Check(request Request) Response {
 	var self UserProject
 
-	rawBody,_ := request.Body.MarshalJSON()
+	rawBody, _ := request.Body.MarshalJSON()
 
 	err := json.Unmarshal(rawBody, &self)
 	if err != nil {
@@ -154,15 +165,14 @@ type Email struct {
 func (up Email) Check(request Request) Response {
 	var self Email
 
-	rawBody,_ := request.Body.MarshalJSON()
+	rawBody, _ := request.Body.MarshalJSON()
 
 	err := json.Unmarshal(rawBody, &self)
 	if err != nil {
 		panic(err)
 	}
 
-	var response Response
-	response = *response.NewResponse(2, "strange")
+	response := *CreateResponse(2, "strange")
 
 	return response
 }
@@ -170,4 +180,3 @@ func (up Email) Check(request Request) Response {
 func (up Email) Support(request Request) bool {
 	return request.Cmd == "Email"
 }
-
