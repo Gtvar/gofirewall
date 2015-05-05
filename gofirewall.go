@@ -3,9 +3,19 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net"
 )
+
+var addrFlag string
+
+func init() {
+	const (
+		defaultAddr = ":8085"
+	)
+	flag.StringVar(&addrFlag, "addr", defaultAddr, "Address for bind")
+}
 
 /*
  * Interface for firewall
@@ -52,8 +62,9 @@ func makeResponse(code int, reason string) *Response {
  * Get json data and check it for firewalls
  */
 func main() {
+	flag.Parse()
 
-	ln, _ := net.Listen("tcp", ":8085")
+	ln, _ := net.Listen("tcp", addrFlag)
 
 	conn, _ := ln.Accept()
 
