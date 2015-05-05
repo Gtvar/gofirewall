@@ -1,15 +1,17 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"net"
 )
 
 /*
  * Interface for firewall
  */
 type Firewall interface {
-	Check(Request) Response
+	Check(Request) (Response, *FirewallError)
 	Support(Request) bool
 }
 
@@ -29,25 +31,19 @@ type Response struct {
 	Reason string `json:"reason"`
 }
 
+/**
+ * Error struct
+ */
+type FirewallError struct {
+	Error   error
+	Message string
+	Code    int
+}
+
 /*
  * Constructor
  */
-func (r *Response) NewResponse(code int, reason string) *Response {
-	r.Code = code
-	r.Reason = reason
-
-	return r
-}
-
-func MakeResponse(code int, reason string) *Response {
-	r := new(Response)
-	r.Code = code
-	r.Reason = reason
-
-	return r
-}
-
-func CreateResponse(code int, reason string) *Response {
+func makeResponse(code int, reason string) *Response {
 	return &Response{code, reason}
 }
 
@@ -56,48 +52,66 @@ func CreateResponse(code int, reason string) *Response {
  * Get json data and check it for firewalls
  */
 func main() {
-	var jsonBlob = in()
+
+	ln, _ := net.Listen("tcp", ":8085")
+
+	conn, _ := ln.Accept()
 
 	defer func() {
 		if err := recover(); err != nil {
 			var ex = fmt.Errorf("%v", err)
-			response := *MakeResponse(1, ex.Error())
+			response := *makeResponse(1, ex.Error())
 
-			out(response)
+			out(conn, response)
+
+			server_loop(conn)
 		}
 	}()
 
-	response := checker(jsonBlob)
-
-	out(response)
+	server_loop(conn)
 }
 
-/*
- * Read data from source
+/**
+ * Loop connection for read-write
+ * @param  {[type]} conn net.Conn      [description]
+ * @return {[type]}      [description]
  */
-func in() []byte {
-	// var jsonBlob = []byte(`{"cmd":"UserProject","body":{"user_id":7,"project":"p6"}}`)
-	var jsonBlob = []byte(`{"cmd":"Email","body":{"email":"test@test.com"}}`)
+func server_loop(conn net.Conn) {
+	for {
+		jsonBlob, _ := bufio.NewReader(conn).ReadString('\n')
 
-	return jsonBlob
+		response, err := checker([]byte(jsonBlob))
+
+		if err != nil {
+			response = *makeResponse(err.Code, err.Message)
+		}
+
+		out(conn, response)
+	}
 }
 
-/*
+/**
  * Print response to out
+ * @param  {[type]} conn     net.Conn      [description]
+ * @param  {[type]} response Response      [description]
+ * @return {[type]}          [description]
  */
-func out(response Response) {
+func out(conn net.Conn, response Response) {
 	responseString, _ := json.Marshal(response)
-	fmt.Println(string(responseString))
+	conn.Write(responseString)
+	conn.Write([]byte("\n"))
 }
 
-/*
+/**
  * Manage firewalls
+ * @param  {[type]} jsonBlob []byte)       (Response, *FirewallError [description]
+ * @return {[type]}          [description]
  */
-func checker(jsonBlob []byte) Response {
+func checker(jsonBlob []byte) (Response, *FirewallError) {
 	var request Request
 	err := json.Unmarshal(jsonBlob, &request)
 	if err != nil {
-		panic(err)
+		return Response{}, &FirewallError{err, "Error decode json", 101}
 	}
 
 	var firewalls []Firewall
@@ -110,10 +124,10 @@ func checker(jsonBlob []byte) Response {
 		}
 	}
 
-	return response
+	return response, nil
 }
 
-/*
+/**
  * Get list of firewalls
  */
 func get_firewalls() []Firewall {
@@ -127,28 +141,31 @@ func get_firewalls() []Firewall {
 	return firewalls
 }
 
-/*
+/**
  * UserProject firewall
+ * {"cmd":"UserProject","body":{"user_id":7,"project":"p6"}}
  */
 type UserProject struct {
 	UserId  int    `json:"user_id"`
 	Project string `json:"project"`
 }
 
-func (up UserProject) Check(request Request) Response {
+/**
+ * UserProject firewall check
+ * @param  {[type]} up UserProject)  Check(request Request) (Response, *FirewallError [description]
+ * @return {[type]}    [description]
+ */
+func (up UserProject) Check(request Request) (Response, *FirewallError) {
 	var self UserProject
 
 	rawBody, _ := request.Body.MarshalJSON()
 
 	err := json.Unmarshal(rawBody, &self)
 	if err != nil {
-		panic(err)
+		return Response{}, &FirewallError{err, "Error decode json", 102}
 	}
 
-	var response Response
-	response = *response.NewResponse(1, "test")
-
-	return response
+	return *makeResponse(1, "test"), nil
 }
 
 func (up UserProject) Support(request Request) bool {
@@ -162,19 +179,22 @@ type Email struct {
 	Email string `json:"email"`
 }
 
-func (up Email) Check(request Request) Response {
+/**
+ * Email firewall check
+ * @param  {[type]} up Email)        Check(request Request) (Response, *FirewallError [description]
+ * @return {[type]}    [description]
+ */
+func (up Email) Check(request Request) (Response, *FirewallError) {
 	var self Email
 
 	rawBody, _ := request.Body.MarshalJSON()
 
 	err := json.Unmarshal(rawBody, &self)
 	if err != nil {
-		panic(err)
+		return Response{}, &FirewallError{err, "Error decode json", 102}
 	}
 
-	response := *CreateResponse(2, "strange")
-
-	return response
+	return *makeResponse(2, "strange"), nil
 }
 
 func (up Email) Support(request Request) bool {
