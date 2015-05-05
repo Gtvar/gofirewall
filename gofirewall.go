@@ -10,6 +10,17 @@ import (
 
 var addrFlag string
 
+const (
+	successCode           = 0
+	forbiddenCode         = 11
+	errorCommonCode       = 21
+	errorDecodejson       = 22
+	errorMissingParameter = 23
+	errorMissingFirewall  = 24
+
+	errorTextJsonDecode = "Error decode json"
+)
+
 func init() {
 	const (
 		defaultAddr = ":8085"
@@ -71,7 +82,7 @@ func main() {
 	defer func() {
 		if err := recover(); err != nil {
 			var ex = fmt.Errorf("%v", err)
-			response := *makeResponse(1, ex.Error())
+			response := *makeResponse(errorCommonCode, ex.Error())
 
 			out(conn, response)
 
@@ -122,11 +133,10 @@ func checker(jsonBlob []byte) (Response, *FirewallError) {
 	var request Request
 	err := json.Unmarshal(jsonBlob, &request)
 	if err != nil {
-		return Response{}, &FirewallError{err, "Error decode json", 101}
+		return Response{}, &FirewallError{err, errorTextJsonDecode, errorDecodejson}
 	}
 
 	var firewalls []Firewall
-	var response Response
 	firewalls = get_firewalls()
 
 	for _, firewall := range firewalls {
@@ -135,7 +145,7 @@ func checker(jsonBlob []byte) (Response, *FirewallError) {
 		}
 	}
 
-	return response, nil
+	return *makeResponse(errorMissingFirewall, "Unknown Firewall"), nil
 }
 
 /**
@@ -173,10 +183,10 @@ func (up UserProject) Check(request Request) (Response, *FirewallError) {
 
 	err := json.Unmarshal(rawBody, &self)
 	if err != nil {
-		return Response{}, &FirewallError{err, "Error decode json", 102}
+		return Response{}, &FirewallError{err, errorTextJsonDecode, errorDecodejson}
 	}
 
-	return *makeResponse(1, "test"), nil
+	return *makeResponse(successCode, "ok"), nil
 }
 
 func (up UserProject) Support(request Request) bool {
@@ -202,10 +212,10 @@ func (up Email) Check(request Request) (Response, *FirewallError) {
 
 	err := json.Unmarshal(rawBody, &self)
 	if err != nil {
-		return Response{}, &FirewallError{err, "Error decode json", 102}
+		return Response{}, &FirewallError{err, errorTextJsonDecode, errorDecodejson}
 	}
 
-	return *makeResponse(2, "strange"), nil
+	return *makeResponse(forbiddenCode, "strange"), nil
 }
 
 func (up Email) Support(request Request) bool {
