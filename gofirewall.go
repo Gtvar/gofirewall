@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 	"net"
 )
 
@@ -17,10 +19,18 @@ const (
 	errorDecodejson       = 22
 	errorMissingParameter = 23
 	errorMissingFirewall  = 24
+	errorDBConnect        = 25
+	errorDBCommon         = 26
 
 	errorTextJsonDecode = "Error decode json"
+
+	mongoDsn = "localhost:27017"
+	mondoDB  = "pg_firewall"
 )
 
+/**
+ * Init flags
+ */
 func init() {
 	const (
 		defaultAddr = ":8085"
@@ -52,6 +62,13 @@ type Response struct {
 	Reason string `json:"reason"`
 }
 
+/*
+ * Response constructor
+ */
+func makeResponse(code int, reason string) *Response {
+	return &Response{code, reason}
+}
+
 /**
  * Error struct
  */
@@ -61,11 +78,12 @@ type FirewallError struct {
 	Code    int
 }
 
-/*
- * Constructor
- */
-func makeResponse(code int, reason string) *Response {
-	return &Response{code, reason}
+func (fe FirewallError) GetMessage() string {
+	if fe.Message != "" {
+		return fe.Message
+	}
+
+	return fe.Error.Error()
 }
 
 /*
@@ -85,8 +103,6 @@ func main() {
 			response := *makeResponse(errorCommonCode, ex.Error())
 
 			out(conn, response)
-
-			server_loop(conn)
 		}
 	}()
 
@@ -105,7 +121,7 @@ func server_loop(conn net.Conn) {
 		response, err := checker([]byte(jsonBlob))
 
 		if err != nil {
-			response = *makeResponse(err.Code, err.Message)
+			response = *makeResponse(err.Code, err.GetMessage())
 		}
 
 		out(conn, response)
@@ -167,6 +183,8 @@ func get_firewalls() []Firewall {
  * {"cmd":"UserProject","body":{"user_id":7,"project":"p6"}}
  */
 type UserProject struct {
+	Code    int
+	Reason  string
 	UserId  int    `json:"user_id"`
 	Project string `json:"project"`
 }
@@ -177,27 +195,50 @@ type UserProject struct {
  * @return {[type]}    [description]
  */
 func (up UserProject) Check(request Request) (Response, *FirewallError) {
-	var self UserProject
-
 	rawBody, _ := request.Body.MarshalJSON()
 
-	err := json.Unmarshal(rawBody, &self)
+	err := json.Unmarshal(rawBody, &up)
 	if err != nil {
 		return Response{}, &FirewallError{err, errorTextJsonDecode, errorDecodejson}
 	}
 
-	return *makeResponse(successCode, "ok"), nil
+	FirewallError := up.Load()
+	if FirewallError.Error != nil {
+		return Response{}, FirewallError
+	}
+
+	return *makeResponse(up.Code, up.Reason), nil
 }
 
 func (up UserProject) Support(request Request) bool {
 	return request.Cmd == "UserProject"
 }
 
+func (up *UserProject) Load() *FirewallError {
+	session, err := mgo.Dial(mongoDsn)
+	if err != nil {
+		return &FirewallError{err, "", errorDBConnect}
+	}
+	defer session.Close()
+
+	c := session.DB(mondoDB).C("user_project")
+	err = c.Find(bson.M{"user_id": up.UserId, "project": up.Project}).One(&up)
+	if err != nil {
+		return &FirewallError{err, "", errorDBCommon}
+	}
+
+	return &FirewallError{}
+}
+
 /*
  * Email firewall
+ *
+ * {"cmd":"Email","body":{"email":"test@test.com"}}
  */
 type Email struct {
-	Email string `json:"email"`
+	Code   int
+	Reason string
+	Email  string `json:"email"`
 }
 
 /**
@@ -206,11 +247,9 @@ type Email struct {
  * @return {[type]}    [description]
  */
 func (up Email) Check(request Request) (Response, *FirewallError) {
-	var self Email
-
 	rawBody, _ := request.Body.MarshalJSON()
 
-	err := json.Unmarshal(rawBody, &self)
+	err := json.Unmarshal(rawBody, &up)
 	if err != nil {
 		return Response{}, &FirewallError{err, errorTextJsonDecode, errorDecodejson}
 	}
