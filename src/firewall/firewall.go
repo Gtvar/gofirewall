@@ -1,16 +1,10 @@
-package main
+package firewall
 
 import (
-	"bufio"
 	"encoding/json"
-	"flag"
-	"fmt"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
-	"net"
 )
-
-var addrFlag string
 
 const (
 	successCode           = 0
@@ -27,16 +21,6 @@ const (
 	mongoDsn = "localhost:27017"
 	mondoDB  = "pg_firewall"
 )
-
-/**
- * Init flags
- */
-func init() {
-	const (
-		defaultAddr = ":8085"
-	)
-	flag.StringVar(&addrFlag, "addr", defaultAddr, "Address for bind")
-}
 
 /*
  * Interface for firewall
@@ -86,58 +70,16 @@ func (fe FirewallError) GetMessage() string {
 	return fe.Error.Error()
 }
 
-/*
- * Firewall main
- * Get json data and check it for firewalls
- */
-func main() {
-	flag.Parse()
+func Check(jsonBlob []byte) []byte {
+	response, err := Run(jsonBlob)
 
-	ln, _ := net.Listen("tcp", addrFlag)
-
-	conn, _ := ln.Accept()
-
-	defer func() {
-		if err := recover(); err != nil {
-			var ex = fmt.Errorf("%v", err)
-			response := *makeResponse(errorCommonCode, ex.Error())
-
-			out(conn, response)
-		}
-	}()
-
-	server_loop(conn)
-}
-
-/**
- * Loop connection for read-write
- * @param  {[type]} conn net.Conn      [description]
- * @return {[type]}      [description]
- */
-func server_loop(conn net.Conn) {
-	for {
-		jsonBlob, _ := bufio.NewReader(conn).ReadString('\n')
-
-		response, err := checker([]byte(jsonBlob))
-
-		if err != nil {
-			response = *makeResponse(err.Code, err.GetMessage())
-		}
-
-		out(conn, response)
+	if err != nil {
+		response = *makeResponse(err.Code, err.GetMessage())
 	}
-}
 
-/**
- * Print response to out
- * @param  {[type]} conn     net.Conn      [description]
- * @param  {[type]} response Response      [description]
- * @return {[type]}          [description]
- */
-func out(conn net.Conn, response Response) {
 	responseString, _ := json.Marshal(response)
-	conn.Write(responseString)
-	conn.Write([]byte("\n"))
+
+	return responseString
 }
 
 /**
@@ -145,16 +87,14 @@ func out(conn net.Conn, response Response) {
  * @param  {[type]} jsonBlob []byte)       (Response, *FirewallError [description]
  * @return {[type]}          [description]
  */
-func checker(jsonBlob []byte) (Response, *FirewallError) {
+func Run(jsonBlob []byte) (Response, *FirewallError) {
 	var request Request
 	err := json.Unmarshal(jsonBlob, &request)
 	if err != nil {
 		return Response{}, &FirewallError{err, errorTextJsonDecode, errorDecodejson}
 	}
 
-	var firewalls []Firewall
-	firewalls = get_firewalls()
-
+	firewalls := Firewalls()
 	for _, firewall := range firewalls {
 		if firewall.Support(request) {
 			return firewall.Check(request)
@@ -167,7 +107,7 @@ func checker(jsonBlob []byte) (Response, *FirewallError) {
 /**
  * Get list of firewalls
  */
-func get_firewalls() []Firewall {
+func Firewalls() []Firewall {
 	var firewalls = make([]Firewall, 2)
 
 	var userProject UserProject
@@ -180,7 +120,7 @@ func get_firewalls() []Firewall {
 
 /**
  * UserProject firewall
- * {"cmd":"UserProject","body":{"user_id":7,"project":"p6"}}
+ * {"cmd":"UserProject","body":{"user_id":75,"project":"foo"}}
  */
 type UserProject struct {
 	Code    int
@@ -214,6 +154,14 @@ func (up UserProject) Support(request Request) bool {
 	return request.Cmd == "UserProject"
 }
 
+/**
+ * {
+    "user_id" : 75,
+    "project" : "foo",
+    "code" : 1,
+    "reason" : "UnOfficial"
+	}
+*/
 func (up *UserProject) Load() *FirewallError {
 	session, err := mgo.Dial(mongoDsn)
 	if err != nil {

@@ -1,0 +1,11 @@
+{
+	"version": 0,
+	"dependencies": [
+		{
+			"importpath": "gopkg.in/mgo.v2",
+			"repository": "https://gopkg.in/mgo.v2",
+			"revision": "3569c88678d88179dcbd68d02ab081cbca3cd4d0",
+			"branch": "v2"
+		}
+	]
+}
